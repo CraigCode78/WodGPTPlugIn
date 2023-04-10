@@ -1,0 +1,96 @@
+import { Tool } from 'langchain/agents';
+import Ajv from 'ajv';
+
+// The following is the actual code that will be
+// run by the tool when it is called
+import { generateWorkout } from "crossfit-workout-generator";
+
+function call(input) {
+  const workout = generateWorkout(input.userPreferences);
+  return { workout };
+}
+
+// This is a class that corresponds to the Langchain tool definition
+// https://js.langchain.com/docs/modules/agents/tools/
+// It validates the input & output against the schemas
+// and then it calls the tool code
+class WodGpt extends Tool {
+  name = 'wod-gpt';
+  
+  description = `Build me a personalised crossfit workout WOD to help me train and build my fitness through crossfit. The action input should adhere to this JSON schema:
+{{"type":"object","properties":{{"userPreferences":{{"type":"object","properties":{{"strength":{{"type":"boolean"}},"endurance":{{"type":"boolean"}},"gymnastics":{{"type":"boolean"}},"mobility":{{"type":"boolean"}}}},"required":["strength","endurance","gymnastics","mobility"]}}}},"required":["userPreferences"]}}`;
+  
+  ajv = new Ajv();
+
+  inputSchema = {
+    "type": "object",
+    "properties": {
+      "userPreferences": {
+        "type": "object",
+        "properties": {
+          "strength": {
+            "type": "boolean"
+          },
+          "endurance": {
+            "type": "boolean"
+          },
+          "gymnastics": {
+            "type": "boolean"
+          },
+          "mobility": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "strength",
+          "endurance",
+          "gymnastics",
+          "mobility"
+        ]
+      }
+    },
+    "required": [
+      "userPreferences"
+    ]
+  };
+  
+  outputSchema = {
+    "type": "object",
+    "properties": {
+      "workout": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "workout"
+    ]
+  };
+
+  validate(data, schema) {
+    if (schema) {
+      const validateSchema = this.ajv.compile(schema);
+      if (!validateSchema(data)) {
+        throw new Error(this.ajv.errorsText(validateSchema.errors));
+      }
+    }
+  }
+
+  async _call(arg) {
+    let output;
+    try {
+      const input = JSON.parse(arg);
+      this.validate(input, this.inputSchema);
+      output = await call(input);
+      try {
+        this.validate(output, this.outputSchema);
+      } catch (err) {
+        throw new Error(`${err.message}: ${JSON.stringify(output)}`);
+      }
+    } catch (err) {
+      output = { error: err.message || err };
+    }
+    return JSON.stringify(output);
+  }
+}
+
+export default WodGpt;
